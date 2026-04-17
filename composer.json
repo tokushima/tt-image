@@ -1,5 +1,9 @@
 {
 	"name": "tokushima/tt-image",
+	"require": {
+		"php": ">=8.0",
+		"ext-imagick": "*"
+	},
 	"autoload": {
 		"psr-4": {
 			"tt\\image\\": "lib/tt/image/"

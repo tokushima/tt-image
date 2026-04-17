@@ -384,11 +384,11 @@ class Imagick{
 			$draw->rotate($rotate);
 		}
 
-		$tracking = \tt\image\Calc::pt2px($opt['tracking'] ?? 0, $this->dpi);
+		$tracking = \tt\image\Unit::pt2px($opt['tracking'] ?? 0, $this->dpi);
 		if($tracking !== 0){
 			$draw->setTextKerning($tracking);
 		}
-		$leading = \tt\image\Calc::pt2px($opt['leading'] ?? 0, $this->dpi);
+		$leading = \tt\image\Unit::pt2px($opt['leading'] ?? 0, $this->dpi);
 
 		if($leading === 0){
 			$text_metrics = $this->image->queryFontMetrics($draw, $text);
