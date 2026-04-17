@@ -10,24 +10,27 @@ class Imagick{
 	const CHANNELS_RGB = 3;
 	const CHANNELS_CMYK = 4;	
 	
-	private static $font_path = [];
+	private static array $font_path = [];
 	private \Imagick $image;
 	private int $dpi = 96;
 	
 	public function __construct(string $filename){
-		if($filename != __FILE__){
+		// __FILE__ はファクトリから渡される内部センチネル (初期化をスキップする)
+		if($filename !== __FILE__){
 			$this->image = new \Imagick($filename);
 		}
 	}
 
 	public function __destruct(){
-		$this->image->clear();
+		if(isset($this->image)){
+			$this->image->clear();
+		}
 	}
 
 	/**
 	 * ライブラリのリソース制限を変更します
 	 */
-	public function set_resource_limit(int $resource_type, string $value){
+	public function set_resource_limit(int $resource_type, string $value): void{
 		$this->image->setResourceLimit($resource_type, $value);
 	}
 
@@ -37,20 +40,20 @@ class Imagick{
 	public static function read(string $data): self{
 		$self = new static(__FILE__);
 		$self->image = new \Imagick();
-		
+
 		if($self->image->readImageBlob($data) !== true){
 			throw new \tt\image\exception\ImageException('invalid image');
 		}
 		return $self;
 	}
-	
+
 	/**
 	 * 塗りつぶした矩形を作成する
 	 */
 	public static function create(int $width, int $height, ?string $color=null): self{
 		$self = new static(__FILE__);
 		$self->image = new \Imagick();
-		
+
 		if(empty($color)){
 			$color = '#FFFFFF';
 		}
@@ -58,7 +61,7 @@ class Imagick{
 		try{
 			$self->image->newImage($width,$height,$color);
 		}catch (\ImagickException $e){
-			throw new \tt\image\exception\ImageException();
+			throw new \tt\image\exception\ImageException($e->getMessage(), 0, $e);
 		}
 		return $self;
 	}
@@ -83,8 +86,9 @@ class Imagick{
 		if(!empty($format)){
 			$this->image->setImageFormat($format);
 		}
-		if(!is_dir(dirname($filename))){
-			mkdir(dirname($filename), 0777, true);
+		$dir = dirname($filename);
+		if(!is_dir($dir) && !mkdir($dir, 0777, true) && !is_dir($dir)){
+			throw new \tt\image\exception\ImageException('failed to create directory: '.$dir);
 		}
 		$this->image->writeImage($filename);
 	}
@@ -95,18 +99,10 @@ class Imagick{
 	 */
 	public function output(string $format='jpeg'): void{
 		$format = strtolower($format);
-		
-		switch($format){
-			case 'png':
-				header('Content-Type: image/png');
-				break;
-			case 'gif':
-				header('Content-Type: image/gif');
-				break;
-			default:
-				header('Content-Type: image/jpeg');
-				$format = 'jpeg';
+		if($format !== 'png' && $format !== 'gif'){
+			$format = 'jpeg';
 		}
+		header('Content-Type: image/'.$format);
 		$this->image->setImageFormat($format);
 		print($this->image);
 	}
@@ -117,17 +113,8 @@ class Imagick{
 	 */
 	public function get(string $format='jpeg'): string{
 		$format = strtolower($format);
-		
-		switch($format){
-			case 'png':
-				header('Content-Type: image/png');
-				break;
-			case 'gif':
-				header('Content-Type: image/gif');
-				break;
-			default:
-				header('Content-Type: image/jpeg');
-				$format = 'jpeg';
+		if($format !== 'png' && $format !== 'gif'){
+			$format = 'jpeg';
 		}
 		$this->image->setImageFormat($format);
 		return $this->image->getImageBlob();
@@ -145,9 +132,9 @@ class Imagick{
 		}
 		
 		if($x === null || $y === null){
-			$x = ceil(($w - $width) / 2);
-			$y = ceil(($h - $height) / 2);
-			
+			$x = (int)ceil(($w - $width) / 2);
+			$y = (int)ceil(($h - $height) / 2);
+
 			[$x, $y] = [($x >= 0) ? $x : 0,($y >= 0) ? $y : 0];
 		}
 		if($x < 0){
@@ -238,37 +225,33 @@ class Imagick{
 	 */
 	public function get_orientation(): int{
 		[$w, $h] = $this->get_size();
-		
-		$d = $h / $w;
-		
-		if($d <= 1.02 && $d >= 0.98){
-			return self::ORIENTATION_SQUARE;
-		}else if($d > 1){
-			return self::ORIENTATION_PORTRAIT;
-		}else{
-			return self::ORIENTATION_LANDSCAPE;
-		}
+		return self::calc_orientation($w, $h);
 	}
 	
 	/**
 	 * オプションを設定する
-	 * @param mixed $v
 	 * @see https://www.php.net/manual/ja/imagick.setoption.php
 	 */
-	public function set_option(string $k, $v): self{
+	public function set_option(string $k, mixed $v): self{
 		$this->image->setOption($k,$v);
 		return $this;
 	}
 	
 	/**
-	 * 差分の抽出
+	 * 2枚の画像を比較し、差分を可視化した画像を返す
+	 *
+	 * 比較には Mean Squared Error (平均二乗誤差) メトリックを使用。
+	 * 各ピクセルの色差を二乗平均した指標で、差が大きいピクセルほど目立つ色で表示される。
+	 * compareImages は [差分画像, 誤差値] の配列を返すが、ここでは差分画像のみを使用する。
+	 *
+	 * @see https://www.php.net/manual/ja/imagick.compareimages.php
 	 */
 	public function diff(self $imagick): self{
 		$result = $this->image->compareImages($imagick->image, \Imagick::METRIC_MEANSQUAREERROR);
-		
+
 		$diff = new static(__FILE__);
 		$diff->image = $result[0];
-		
+
 		return $diff;
 	}
 	
@@ -357,7 +340,7 @@ class Imagick{
 	 */
 	public static function set_font(string $font_path, ?string $font_name=null): void{
 		if(empty($font_name)){
-			$font_name = preg_replace('/^(.+)\..+$/','\\1',basename($font_path));
+			$font_name = pathinfo($font_path, PATHINFO_FILENAME);
 		}
 		if(!is_file($font_path)){
 			throw new \tt\image\exception\AccessDeniedException($font_name.' access denied');
@@ -473,21 +456,24 @@ class Imagick{
 			throw new \tt\image\exception\AccessDeniedException($filename.' not found');
 		}
 		$info = getimagesize($filename);
+		if($info === false){
+			throw new \tt\image\exception\ImageException('invalid image: '.$filename);
+		}
 		$mime = $info['mime'] ?? null;
 		$broken = null;
 		
-		if($mime == 'image/jpeg'){
-			$broken = (['ffd8','ffd9'] != self::check_file_type($filename, 2, 2));
-		}else if($mime == 'image/png'){
-			$broken = (['89504e470d0a1a0a','0000000049454e44ae426082'] != self::check_file_type($filename, 8, 12));
-		}else if($mime == 'image/gif'){
-			$broken = (['474946','3b'] != self::check_file_type($filename, 3, 1));
+		if($mime === 'image/jpeg'){
+			$broken = (['ffd8','ffd9'] !== self::check_file_type($filename, 2, 2));
+		}else if($mime === 'image/png'){
+			$broken = (['89504e470d0a1a0a','0000000049454e44ae426082'] !== self::check_file_type($filename, 8, 12));
+		}else if($mime === 'image/gif'){
+			$broken = (['474946','3b'] !== self::check_file_type($filename, 3, 1));
 		}
 		
 		return [
 			'width'=>$info[0],
 			'height'=>$info[1],
-			'orientation'=>self::judge_orientation($info[0], $info[1]),
+			'orientation'=>self::calc_orientation($info[0], $info[1]),
 			'mime'=>$mime,
 			'bits'=>$info['bits'] ?? null,
 			'channels'=>$info['channels'] ?? null,
@@ -495,7 +481,7 @@ class Imagick{
 		];
 	}
 
-	private static function check_file_type(string $filename, string $header, string $footer): array{
+	private static function check_file_type(string $filename, int $header, int $footer): array{
 		$fp = fopen($filename, 'rb');
 		$a = unpack('H*', fread($fp, $header));
 		fseek($fp, $footer * -1, SEEK_END);
@@ -504,7 +490,7 @@ class Imagick{
 		return [($a[1] ?? null),($b[1] ?? null)];
 	}
 	
-	private static function judge_orientation(float $w, float $h): int{
+	private static function calc_orientation(float $w, float $h): int{
 		if($w > 0 && $h > 0){
 			$d = $h / $w;
 			
