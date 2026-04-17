@@ -30,7 +30,3 @@ cd imagick
 phpize && ./configure
 make && make install
 ```
-
-## VS Code (PHP Intelephense) 対応
-
-拡張機能の設定 → `Intelephense: Stubs` に `imagick` を追加する。
